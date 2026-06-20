@@ -17,16 +17,21 @@ struct TopSheet<Item: Identifiable, Content: View>: View {
     @State private var cached: Item?
 
     var body: some View {
-        ZStack(alignment: .top) {
-            if let cached {
-                Color.black.opacity(0.18)
-                    .ignoresSafeArea()
-                    .onTapGesture { item = nil }
+        GeometryReader { proxy in
+            ZStack(alignment: .top) {
+                if let cached {
+                    Color.black.opacity(0.18)
+                        .ignoresSafeArea()
+                        .onTapGesture { item = nil }
 
-                VStack {
+                    // The card's background bleeds up to the very top edge so the
+                    // sheet still reads as dropping in from the top, but the
+                    // content is padded past the top safe-area inset so the title
+                    // and note clear the status bar / Dynamic Island.
                     content(cached)
                         .padding(.horizontal, 24)
-                        .padding(.vertical, 28)
+                        .padding(.top, proxy.safeAreaInsets.top + 28)
+                        .padding(.bottom, 28)
                         .frame(maxWidth: .infinity)
                         .background(Color.intentioSheet)
                         .clipShape(
@@ -36,14 +41,13 @@ struct TopSheet<Item: Identifiable, Content: View>: View {
                             )
                         )
                         .shadow(color: Color.black.opacity(0.12), radius: 24, x: 0, y: 12)
-
-                    Spacer()
+                        .frame(maxHeight: .infinity, alignment: .top)
+                        .ignoresSafeArea(.container, edges: .top)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .animation(.spring(response: 0.38, dampingFraction: 0.82), value: cached?.id)
-        .ignoresSafeArea()
         .onChange(of: item?.id, initial: true) {
             cached = item
         }
