@@ -192,26 +192,63 @@ private struct OrganicBlob: Shape {
         set { progress = newValue }
     }
 
+    /// A single sinusoidal contribution to the blob's radius. The organic look
+    /// comes from stacking several of these with unrelated lobe counts and drift
+    /// speeds, so the outline never collapses into one clean, repeating wave.
+    private struct Wave {
+        var lobes: Double      // number of bumps around the circumference
+        var drift: Double      // how fast those bumps travel over time
+        var amplitude: Double  // bump depth, in points
+        var phase: Double = 0  // fixed offset so layers don't all start aligned
+
+        func offset(at angle: Double, time: Double) -> Double {
+            sin(angle * lobes + time * drift + phase) * amplitude
+        }
+    }
+
+    /// Resting motion: the button gently "breathes" while untouched.
+    private static let idleWaves = [
+        Wave(lobes: 3, drift:  1.0, amplitude: 1.50),
+        Wave(lobes: 5, drift: -1.3, amplitude: 0.90),
+        Wave(lobes: 2, drift:  0.5, amplitude: 0.75),
+    ]
+
+    /// Pressed distortion, scaled by `progress`: like the uneven rings a drop
+    /// pushes across water. The mismatched lobe counts and drift speeds keep the
+    /// ripples from ever lining up into a symmetric flower; the final 1-lobe wave
+    /// adds a slow, lopsided lean.
+    private static let rippleWaves = [
+        Wave(lobes: 5, drift: -4.0, amplitude: 9, phase: 0.0),
+        Wave(lobes: 7, drift:  2.7, amplitude: 5, phase: 1.3),
+        Wave(lobes: 3, drift: -5.6, amplitude: 4, phase: 2.1),
+        Wave(lobes: 1, drift: -1.7, amplitude: 3, phase: 0.6),
+    ]
+
+    /// Vertices sampled around the circle. High enough that the 7-lobe ripple
+    /// renders smoothly instead of aliasing into a fake low-frequency wobble.
+    private static let vertexCount = 16
+
+    /// Resting radius as a fraction of the frame's half-extent.
+    private static let radiusFraction = 0.82
+
+    /// Extra swell under a sustained press, growing with progress².
+    private static let pressSwell = 10.0
+
     func path(in rect: CGRect) -> Path {
         let center = CGPoint(x: rect.midX, y: rect.midY)
-        let baseRadius = min(rect.width, rect.height) / 2 * 0.82
-        let pointCount = 12
+        let baseRadius = min(rect.width, rect.height) / 2 * Self.radiusFraction
 
         func radius(at angle: Double) -> Double {
-            let idle = (sin(angle * 3 + morphTime) * 5
-                     + sin(angle * 5 - morphTime * 1.3) * 3
-                     + sin(angle * 2 + morphTime * 0.5) * 2.5) * 0.3
-
-            // Pressing creates a rippling, water-drop distortion that grows with progress.
-            let ripple = progress * 16 * sin(angle * 8 - morphTime * 4)
-            let bulge = progress * progress * 10
-
-            return baseRadius + idle + ripple + bulge
+            let idle = Self.idleWaves.reduce(0) { $0 + $1.offset(at: angle, time: morphTime) }
+            let ripple = Self.rippleWaves.reduce(0) { $0 + $1.offset(at: angle, time: morphTime) }
+            let swell = progress * progress * Self.pressSwell
+            return baseRadius + idle + progress * ripple + swell
         }
 
+        let vertexCount = Self.vertexCount
         var points: [CGPoint] = []
-        for i in 0..<pointCount {
-            let angle = Double(i) / Double(pointCount) * 2 * .pi
+        for i in 0..<vertexCount {
+            let angle = Double(i) / Double(vertexCount) * 2 * .pi
             let r = radius(at: angle)
             points.append(CGPoint(
                 x: center.x + cos(angle) * r,
@@ -219,10 +256,12 @@ private struct OrganicBlob: Shape {
             ))
         }
 
+        // Draw quad curves through the edge midpoints, using each vertex as the
+        // control point, so the outline stays smooth and closed.
         var midpoints: [CGPoint] = []
-        for i in 0..<pointCount {
+        for i in 0..<vertexCount {
             let current = points[i]
-            let next = points[(i + 1) % pointCount]
+            let next = points[(i + 1) % vertexCount]
             midpoints.append(CGPoint(
                 x: (current.x + next.x) / 2,
                 y: (current.y + next.y) / 2
@@ -231,10 +270,10 @@ private struct OrganicBlob: Shape {
 
         var path = Path()
         path.move(to: midpoints[0])
-        for i in 0..<pointCount {
+        for i in 0..<vertexCount {
             path.addQuadCurve(
-                to: midpoints[(i + 1) % pointCount],
-                control: points[(i + 1) % pointCount]
+                to: midpoints[(i + 1) % vertexCount],
+                control: points[(i + 1) % vertexCount]
             )
         }
         path.closeSubpath()
