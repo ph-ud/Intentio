@@ -1,0 +1,14 @@
+# Xcode user data & build artifacts
+xcuserdata/
+DerivedData/
+build/
+
+# XcodeGen tools
+tools/
+
+# macOS
+.DS_Store
+
+# Swift Package Manager
+.build/
+.swiftpm/
